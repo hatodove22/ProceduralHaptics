@@ -101,8 +101,13 @@
     <p style="text-align:center; color:#ccc; margin-bottom: 20px;">Move the paddle with your mouse/finger to hit the
         ball. Change the ball material to feel different collision impacts!</p>
 
-    <div style="margin-bottom: 20px;">
-        <button id="playBtn">Play / エンジン起動</button>
+    <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center; justify-content: center;">
+        <button id="playBtn" style="flex: 1;">Play / エンジン起動</button>
+        <select id="audioDeviceSelect"
+            style="flex: 1; padding: 12px; border-radius: 6px; background: #333; color: white; border: 1px solid #555;">
+            <option value="">Default Audio</option>
+        </select>
+        <button id="refreshDevicesBtn" style="padding: 12px; width: auto;" title="Refresh Devices">🔄</button>
     </div>
 
     <div class="material-selector">
@@ -114,17 +119,58 @@
     <canvas id="pongCanvas"></canvas>
 
     <script type="module">
-        import { HapticEngine } from '../src/ProceduralHaptics.js';
+        import { HapticEngine, GamepadManager } from '../src/ProceduralHaptics.js';
 
         const haptics = new HapticEngine();
+        const gamepad = new GamepadManager();
+
+        // --- Audio Device Selection (HD Haptics Routing) ---
+        const audioSelect = document.getElementById('audioDeviceSelect');
+        const refreshBtn = document.getElementById('refreshDevicesBtn');
+
+        const populateAudioDevices = async () => {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
+
+                audioSelect.innerHTML = '<option value="">Default Audio</option>';
+                audioOutputs.forEach(device => {
+                    if (device.deviceId) {
+                        const opt = document.createElement('option');
+                        opt.value = device.deviceId;
+                        let label = device.label || `Device ${audioSelect.length}`;
+                        if (label.toLowerCase().includes('wireless controller')) label = `🎮 DualSense (${label})`;
+                        opt.textContent = label;
+                        audioSelect.appendChild(opt);
+                    }
+                });
+            } catch (err) {
+                console.warn('Could not enumerate audio devices:', err);
+            }
+        };
+
+        refreshBtn.addEventListener('click', populateAudioDevices);
+        navigator.mediaDevices.addEventListener('devicechange', populateAudioDevices);
+
+        audioSelect.addEventListener('change', async (e) => {
+            const success = await haptics.setAudioSink(e.target.value);
+            if (!success) {
+                alert("Failed to route audio.");
+                e.target.value = "";
+            }
+        });
 
         // --- エンジン制御 ---
         const playBtn = document.getElementById('playBtn');
         playBtn.addEventListener('click', async () => {
             const isPlaying = await haptics.togglePlay();
             playBtn.textContent = isPlaying ? 'Stop / 停止' : 'Play / エンジン起動';
-            if (isPlaying) playBtn.classList.add('playing');
-            else playBtn.classList.remove('playing');
+            if (isPlaying) {
+                playBtn.classList.add('playing');
+                if (audioSelect.options.length <= 1) populateAudioDevices();
+            } else {
+                playBtn.classList.remove('playing');
+            }
         });
 
         // --- Haptic Materials ---
@@ -215,9 +261,28 @@
             const dt = Math.min((now - lastTime) / 16.6, 2);
             lastTime = now;
 
-            // Update Paddle (Follow mouse cleanly)
-            paddle.vy = (mouseY - (paddle.y + paddle.h / 2)) * 0.2; // Smooth follow
-            paddle.y += paddle.vy * dt;
+            // Gamepad Polling for paddle
+            const padState = gamepad.getState();
+            let padInputY = 0;
+            if (padState.connected) {
+                // Left stick Y or D-PAD Up/Down (Buttons 12/13)
+                const deadzone = 0.1;
+                if (Math.abs(padState.axes[1]) > deadzone) padInputY = padState.axes[1];
+                if (padState.buttons[12]?.pressed) padInputY = -1; // up
+                if (padState.buttons[13]?.pressed) padInputY = 1;  // down
+            }
+
+            if (padInputY !== 0) {
+                // Gamepad direct velocity control
+                paddle.vy = padInputY * 8; // Max pad speed
+                paddle.y += paddle.vy * dt;
+                // Update phantom mouseY so it doesn't snap back as violently if mixed
+                mouseY = paddle.y + paddle.h / 2;
+            } else {
+                // Update Paddle (Follow mouse cleanly)
+                paddle.vy = (mouseY - (paddle.y + paddle.h / 2)) * 0.2; // Smooth follow
+                paddle.y += paddle.vy * dt;
+            }
 
             // Constrain Player Paddle
             if (paddle.y < 0) paddle.y = 0;

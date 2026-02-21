@@ -86,8 +86,13 @@
     <p style="text-align:center; color:#ccc; margin-bottom: 20px;">Draw on the canvas below. The haptic feedback changes
         based on the tool and drawing speed.</p>
 
-    <div style="margin-bottom: 20px;">
-        <button id="playBtn">Play / エンジン起動</button>
+    <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center; justify-content: center;">
+        <button id="playBtn" style="flex: 1;">Play / エンジン起動</button>
+        <select id="audioDeviceSelect"
+            style="flex: 1; padding: 12px; border-radius: 6px; background: #333; color: white; border: 1px solid #555;">
+            <option value="">Default Audio</option>
+        </select>
+        <button id="refreshDevicesBtn" style="padding: 12px; width: auto;" title="Refresh Devices">🔄</button>
     </div>
 
     <div class="tools">
@@ -108,13 +113,53 @@
 
         const haptics = new HapticEngine();
 
+        // --- Audio Device Selection (HD Haptics Routing) ---
+        const audioSelect = document.getElementById('audioDeviceSelect');
+        const refreshBtn = document.getElementById('refreshDevicesBtn');
+
+        const populateAudioDevices = async () => {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
+
+                audioSelect.innerHTML = '<option value="">Default Audio</option>';
+                audioOutputs.forEach(device => {
+                    if (device.deviceId) {
+                        const opt = document.createElement('option');
+                        opt.value = device.deviceId;
+                        let label = device.label || `Device ${audioSelect.length}`;
+                        if (label.toLowerCase().includes('wireless controller')) label = `🎮 DualSense (${label})`;
+                        opt.textContent = label;
+                        audioSelect.appendChild(opt);
+                    }
+                });
+            } catch (err) {
+                console.warn('Could not enumerate audio devices:', err);
+            }
+        };
+
+        refreshBtn.addEventListener('click', populateAudioDevices);
+        navigator.mediaDevices.addEventListener('devicechange', populateAudioDevices);
+
+        audioSelect.addEventListener('change', async (e) => {
+            const success = await haptics.setAudioSink(e.target.value);
+            if (!success) {
+                alert("Failed to route audio.");
+                e.target.value = "";
+            }
+        });
+
         // --- エンジン制御 ---
         const playBtn = document.getElementById('playBtn');
         playBtn.addEventListener('click', async () => {
             const isPlaying = await haptics.togglePlay();
             playBtn.textContent = isPlaying ? 'Stop / 停止' : 'Play / エンジン起動';
-            if (isPlaying) playBtn.classList.add('playing');
-            else playBtn.classList.remove('playing');
+            if (isPlaying) {
+                playBtn.classList.add('playing');
+                if (audioSelect.options.length <= 1) populateAudioDevices();
+            } else {
+                playBtn.classList.remove('playing');
+            }
         });
 
         // --- Tool Settings (Visual & Haptic) ---

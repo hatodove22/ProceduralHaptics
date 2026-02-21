@@ -33,7 +33,7 @@ export class HapticEngine {
         this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         this.masterGain = this.audioCtx.createGain();
         this.masterGain.gain.value = 0;
-        
+
         this.scriptNode = this.audioCtx.createScriptProcessor(4096, 1, 1);
         this.scriptNode.onaudioprocess = (e) => this._processAudio(e);
 
@@ -52,6 +52,23 @@ export class HapticEngine {
         }
         this.isPlaying = !this.isPlaying;
         return this.isPlaying;
+    }
+
+    // --- New: Audio Device Routing for HD Haptics ---
+    async setAudioSink(deviceId) {
+        if (!this.audioCtx) await this.init();
+        if (typeof this.audioCtx.setSinkId === 'function') {
+            try {
+                await this.audioCtx.setSinkId(deviceId);
+                return true;
+            } catch (err) {
+                console.error('Failed to set audio sink (HD Haptics):', err);
+                return false;
+            }
+        } else {
+            console.warn('Browser does not support AudioContext.setSinkId()');
+            return false;
+        }
     }
 
     setParams(newParams) {
@@ -124,7 +141,7 @@ export class HapticEngine {
                 this.impulsePhase += impulseFreq / sampleRate;
                 let impVal = Math.sin(this.impulsePhase * 2.0 * Math.PI);
                 impVal += noise(this.impulsePhase * 8.0) * p.roughness * 0.6;
-                
+
                 if (p.granularity > 0) {
                     impVal = Math.sign(impVal) * Math.pow(Math.abs(impVal), 1.0 + p.granularity * 3.0);
                 }
@@ -146,7 +163,7 @@ export class HapticEngine {
             let mixed = textureOut + impulseOut;
             output[i] = Math.max(-1.0, Math.min(1.0, mixed));
         }
-        
+
         this.impulseEnvelope = currentImpulseEnv;
     }
 }
@@ -186,5 +203,43 @@ export class HapticAI {
         if (!text) throw new Error('Failed to parse response.');
 
         return JSON.parse(text);
+    }
+}
+
+// --- New: Gamepad Input Helper ---
+export class GamepadManager {
+    constructor() {
+        this.gamepads = {};
+        this.callbacks = {
+            onConnect: null,
+            onDisconnect: null
+        };
+
+        window.addEventListener("gamepadconnected", (e) => {
+            this.gamepads[e.gamepad.index] = e.gamepad;
+            if (this.callbacks.onConnect) this.callbacks.onConnect(e.gamepad);
+        });
+
+        window.addEventListener("gamepaddisconnected", (e) => {
+            delete this.gamepads[e.gamepad.index];
+            if (this.callbacks.onDisconnect) this.callbacks.onDisconnect(e.gamepad);
+        });
+    }
+
+    // Returns the first active gamepad state (standard mapping)
+    getState() {
+        const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+        for (let i = 0; i < pads.length; i++) {
+            if (pads[i] && pads[i].connected) {
+                const pad = pads[i];
+                return {
+                    connected: true,
+                    id: pad.id,
+                    axes: pad.axes,     // [0: LX, 1: LY, 2: RX, 3: RY]
+                    buttons: pad.buttons // [0: Cross/A, 1: Circle/B, ...] each has .pressed and .value
+                };
+            }
+        }
+        return { connected: false };
     }
 }

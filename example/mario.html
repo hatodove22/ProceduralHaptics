@@ -130,8 +130,13 @@
     <p style="text-align:center; color:#ccc; margin-bottom: 20px;">Use Left/Right arrows and SPACE to jump, or use the
         on-screen buttons. Feel the footsteps and impacts.</p>
 
-    <div style="margin-bottom: 20px;">
-        <button id="playBtn">Play / エンジン起動</button>
+    <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center; justify-content: center;">
+        <button id="playBtn" style="flex: 1;">Play / エンジン起動</button>
+        <select id="audioDeviceSelect"
+            style="flex: 1; padding: 12px; border-radius: 6px; background: #333; color: white; border: 1px solid #555;">
+            <option value="">Default Audio</option>
+        </select>
+        <button id="refreshDevicesBtn" style="padding: 12px; width: auto;" title="Refresh Devices">🔄</button>
     </div>
 
     <div id="gameContainer">
@@ -150,17 +155,63 @@
     </div>
 
     <script type="module">
-        import { HapticEngine } from '../src/ProceduralHaptics.js';
+        import { HapticEngine, GamepadManager } from '../src/ProceduralHaptics.js';
 
         const haptics = new HapticEngine();
+        const gamepad = new GamepadManager();
+
+        // --- Audio Device Selection (HD Haptics Routing) ---
+        const audioSelect = document.getElementById('audioDeviceSelect');
+        const refreshBtn = document.getElementById('refreshDevicesBtn');
+
+        const populateAudioDevices = async () => {
+            try {
+                // Request permission first if needed (usually happens on first gUM or play)
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
+
+                audioSelect.innerHTML = '<option value="">Default Audio</option>';
+                audioOutputs.forEach(device => {
+                    if (device.deviceId) {
+                        const opt = document.createElement('option');
+                        opt.value = device.deviceId;
+                        // Identify DualSense and highlight it
+                        let label = device.label || `Device ${audioSelect.length}`;
+                        if (label.toLowerCase().includes('wireless controller')) {
+                            label = `🎮 DualSense (${label})`;
+                        }
+                        opt.textContent = label;
+                        audioSelect.appendChild(opt);
+                    }
+                });
+            } catch (err) {
+                console.warn('Could not enumerate audio devices:', err);
+            }
+        };
+
+        refreshBtn.addEventListener('click', populateAudioDevices);
+        navigator.mediaDevices.addEventListener('devicechange', populateAudioDevices);
+
+        audioSelect.addEventListener('change', async (e) => {
+            const success = await haptics.setAudioSink(e.target.value);
+            if (!success) {
+                alert("Failed to route audio. Ensure you have granted permissions and are using a supported browser (Chrome/Edge).");
+                e.target.value = ""; // Reset
+            }
+        });
 
         // --- エンジン制御 ---
         const playBtn = document.getElementById('playBtn');
         playBtn.addEventListener('click', async () => {
             const isPlaying = await haptics.togglePlay();
             playBtn.textContent = isPlaying ? 'Stop / 停止' : 'Play / エンジン起動';
-            if (isPlaying) playBtn.classList.add('playing');
-            else playBtn.classList.remove('playing');
+            if (isPlaying) {
+                playBtn.classList.add('playing');
+                // Try to populate devices on first user interaction
+                if (audioSelect.options.length <= 1) populateAudioDevices();
+            } else {
+                playBtn.classList.remove('playing');
+            }
         });
 
         // --- Haptic Profiles ---
