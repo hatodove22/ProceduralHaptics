@@ -40,27 +40,9 @@ export class HapticEngine {
         this.scriptNode = this.audioCtx.createScriptProcessor(4096, 1, 1);
         this.scriptNode.onaudioprocess = (e) => this._processAudio(e);
 
-        // --- ここからDualSense用 4chルーティング処理 ---
-
-        // 1. 出力先を強制的に4チャンネルにする
-        this.audioCtx.destination.channelCount = 4;
-        this.audioCtx.destination.channelCountMode = 'explicit';
-
-        // 2. チャンネルマージャー（振り分け器）を作成 (4ch対応)
-        const merger = this.audioCtx.createChannelMerger(4);
-
-        // 3. 生成した触覚信号(masterGain)を、mergerの 3ch(インデックス2) と 4ch(インデックス3) に繋ぐ
-        // ※ 0:Left, 1:Right, 2:Left Actuator, 3:Right Actuator
-        this.masterGain.connect(merger, 0, 2);
-        this.masterGain.connect(merger, 0, 3);
-
-        // 4. mergerを最終出力に繋ぐ
-        merger.connect(this.audioCtx.destination);
         this.scriptNode.connect(this.masterGain);
-
-        // アナライザー（波形表示用）にも繋ぐ
         this.masterGain.connect(this.analyser);
-        // ----------------------------------------------
+        this.analyser.connect(this.audioCtx.destination);
     }
 
     async togglePlay() {
@@ -76,7 +58,7 @@ export class HapticEngine {
         return this.isPlaying;
     }
 
-    // --- New: Audio Device Routing for HD Haptics ---
+    // --- Audio Device Routing for HD Haptics ---
     async setAudioSink(deviceId) {
         if (!this.audioCtx) await this.init();
         if (typeof this.audioCtx.setSinkId === 'function') {
@@ -248,19 +230,31 @@ export class GamepadManager {
         });
     }
 
-    // Returns the first active gamepad state (standard mapping)
+    // Returns the first active gamepad state (prioritizing DualSense standard mapping)
     getState() {
         const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+        let bestPad = null;
+
         for (let i = 0; i < pads.length; i++) {
-            if (pads[i] && pads[i].connected) {
-                const pad = pads[i];
-                return {
-                    connected: true,
-                    id: pad.id,
-                    axes: pad.axes,     // [0: LX, 1: LY, 2: RX, 3: RY]
-                    buttons: pad.buttons // [0: Cross/A, 1: Circle/B, ...] each has .pressed and .value
-                };
+            const pad = pads[i];
+            if (pad && pad.connected) {
+                const id = pad.id.toLowerCase();
+                // Prioritize DualSense / Wireless Controller
+                if (id.includes('dualsense') || id.includes('wireless controller') || id.includes('054c')) {
+                    bestPad = pad;
+                    break;
+                }
+                if (!bestPad) bestPad = pad; // fallback to first connected
             }
+        }
+
+        if (bestPad) {
+            return {
+                connected: true,
+                id: bestPad.id,
+                axes: bestPad.axes,     // [0: LX, 1: LY, 2: RX, 3: RY]
+                buttons: bestPad.buttons // [0: Cross/A, 1: Circle/B, ...] each has .pressed and .value
+            };
         }
         return { connected: false };
     }
