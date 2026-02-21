@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <title>ProceduralHaptics Demo</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="nav-links" style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
+        <a href="index.html" class="nav-link active"
+            style="padding: 8px 16px; background: #0070cc; color: white; text-decoration: none; border-radius: 4px; font-size: 0.9rem;">Main
+            Demo</a>
+        <a href="buttons.html" class="nav-link"
+            style="padding: 8px 16px; background: #333; color: white; text-decoration: none; border-radius: 4px; font-size: 0.9rem;">UI
+            Elements</a>
+        <a href="drawing.html" class="nav-link"
+            style="padding: 8px 16px; background: #333; color: white; text-decoration: none; border-radius: 4px; font-size: 0.9rem;">Drawing</a>
+    </div>
+
+    <h1>ProceduralHaptics デザイナー</h1>
+
+    <div class="ai-panel">
+        <h2>🤖 AI 質感ジェネレーター</h2>
+        <input type="password" id="apiKey" placeholder="Gemini API Key を入力">
+        <input type="text" id="aiPrompt" placeholder="例: ザラザラしたアスファルト, 氷の上を滑る感覚">
+        <button id="generateBtn">AIで質感を生成</button>
+        <div id="aiStatus"></div>
+    </div>
+
+    <div id="touchPad">
+        <div id="puck">Drag Me!</div>
+    </div>
+
+    <div id="sliders">
+        <!-- スライダー群（JavaScriptで動的に生成・制御します） -->
+    </div>
+
+    <div style="margin-top: 20px;">
+        <button id="playBtn">Play / エンジン起動</button>
+    </div>
+
+    <script type="module">
+        import { HapticEngine, HapticAI } from '../src/ProceduralHaptics.js';
+
+        const haptics = new HapticEngine();
+
+        // --- UIセットアップ ---
+        const paramsConfig = [
+            { id: 'granularity', label: '粒感 (滑らか - ツブツブ)' },
+            { id: 'roughness', label: 'ザラザラ (すべすべ - ザラザラ)' },
+            { id: 'state', label: '固体 (液体 - 固体)' },
+            { id: 'hardness', label: '硬さ (柔らかい - 硬い)' },
+            { id: 'weight', label: '重さ (重い - 軽い)' },
+            { id: 'viscosity', label: '粘度 (サラサラ - ネバネバ)' }
+        ];
+
+        const slidersDiv = document.getElementById('sliders');
+        paramsConfig.forEach(conf => {
+            const div = document.createElement('div');
+            div.className = 'control-group';
+            div.innerHTML = `
+                <label><span>${conf.label}</span></label>
+                <input type="range" id="${conf.id}" min="0" max="1" step="0.01" value="0.5">
+            `;
+            slidersDiv.appendChild(div);
+
+            const slider = document.getElementById(conf.id);
+            slider.addEventListener('input', () => {
+                haptics.setParams({ [conf.id]: parseFloat(slider.value) });
+            });
+        });
+
+        const updateAllParams = () => {
+            const currentParams = {};
+            paramsConfig.forEach(conf => currentParams[conf.id] = parseFloat(document.getElementById(conf.id).value));
+            haptics.setParams(currentParams);
+        };
+        updateAllParams();
+
+        // --- エンジン制御 ---
+        const playBtn = document.getElementById('playBtn');
+        playBtn.addEventListener('click', async () => {
+            const isPlaying = await haptics.togglePlay();
+            playBtn.textContent = isPlaying ? 'Stop / 停止' : 'Play / エンジン起動';
+            if (isPlaying) playBtn.classList.add('playing');
+            else playBtn.classList.remove('playing');
+        });
+
+        // --- ドラッグ制御 (UIと物理演算) ---
+        const puck = document.getElementById('puck');
+        const touchPad = document.getElementById('touchPad');
+        let isDragging = false;
+        let lastX = 0, lastY = 0, lastTime = 0, prevVel = 0;
+
+        const startDrag = (x, y) => { isDragging = true; lastX = x; lastY = y; lastTime = performance.now(); prevVel = 0; };
+        const moveDrag = (x, y) => {
+            if (!isDragging) return;
+            const now = performance.now();
+            const dt = now - lastTime;
+            let rawVel = 0;
+            if (dt > 0) {
+                const dist = Math.hypot(x - lastX, y - lastY);
+                rawVel = Math.min((dist / dt) * 1.5, 5.0);
+            }
+            haptics.setVelocity(rawVel);
+
+            // 衝突判定 (加速度)
+            if (prevVel - rawVel > 0.8 && prevVel > 0.5) {
+                haptics.triggerCollision(Math.min((prevVel - rawVel) / 3.0, 1.0));
+                puck.classList.add('collision');
+                setTimeout(() => puck.classList.remove('collision'), 150);
+            }
+            prevVel = rawVel;
+
+            lastX = x; lastY = y; lastTime = now;
+
+            const rect = touchPad.getBoundingClientRect();
+            let px = Math.max(0, Math.min(x - rect.left - 40, rect.width - 80));
+            let py = Math.max(0, Math.min(y - rect.top - 40, rect.height - 80));
+            puck.style.left = px + 'px'; puck.style.top = py + 'px';
+        };
+        const endDrag = () => { isDragging = false; };
+
+        puck.addEventListener('mousedown', e => startDrag(e.clientX, e.clientY));
+        window.addEventListener('mousemove', e => moveDrag(e.clientX, e.clientY));
+        window.addEventListener('mouseup', endDrag);
+
+        setInterval(() => {
+            if (!isDragging || performance.now() - lastTime > 50) haptics.setVelocity(0);
+        }, 30);
+
+        // --- AI連携 ---
+        const aiStatus = document.getElementById('aiStatus');
+        document.getElementById('generateBtn').addEventListener('click', async (e) => {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const prompt = document.getElementById('aiPrompt').value.trim();
+            if (!apiKey || !prompt) return alert("APIキーとプロンプトを入力してください");
+
+            e.target.disabled = true;
+            aiStatus.textContent = "Gemini APIに問い合わせ中...";
+            aiStatus.className = "loading";
+
+            const ai = new HapticAI(apiKey);
+            try {
+                const params = await ai.generateParams(prompt);
+                haptics.setParams(params);
+                paramsConfig.forEach(conf => {
+                    if (params[conf.id] !== undefined) {
+                        document.getElementById(conf.id).value = params[conf.id];
+                        document.getElementById(conf.id).dispatchEvent(new Event('input'));
+                    }
+                });
+                aiStatus.textContent = `✅ 質感を適用しました: 「${prompt}」`;
+                aiStatus.className = "success";
+            } catch (err) {
+                aiStatus.textContent = `❌ エラー: ${err.message}`;
+                aiStatus.className = "error";
+            } finally {
+                e.target.disabled = false;
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "procedural-haptics",
+  "version": "1.0.0",
+  "description": "A Web-based HD Haptics Engine utilizing procedural DSP (fBm, Wavefolding) and Gemini API for prompt-to-haptics generation.",
+  "main": "src/ProceduralHaptics.js",
+  "type": "module",
+  "scripts": {
+    "start": "npx serve ."
+  },
+  "keywords": [
+    "haptics",
+    "web-audio",
+    "dualsense",
+    "procedural",
+    "gemini"
+  ],
+  "author": "",
+  "license": "MIT"
+}

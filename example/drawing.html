@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <title>ProceduralHaptics - Drawing Demo</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        #canvasContainer {
+            width: 100%;
+            height: 350px;
+            background: #fff;
+            border: 2px solid #444;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            position: relative;
+            touch-action: none;
+            cursor: crosshair;
+        }
+
+        #drawCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .tools {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tool-btn {
+            flex: 1;
+            padding: 10px;
+            background: #222;
+            color: #ccc;
+            border: 2px solid #444;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+
+        .tool-btn.active {
+            background: #0070cc;
+            color: white;
+            border-color: #0070cc;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+
+        .nav-link {
+            padding: 8px 16px;
+            background: #333;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        .nav-link:hover {
+            background: #555;
+        }
+
+        .nav-link.active {
+            background: #0070cc;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="nav-links">
+        <a href="index.html" class="nav-link">Main Demo</a>
+        <a href="buttons.html" class="nav-link">UI Elements</a>
+        <a href="drawing.html" class="nav-link active">Drawing</a>
+    </div>
+
+    <h1>Drawing Texture Haptics</h1>
+    <p style="text-align:center; color:#ccc; margin-bottom: 20px;">Draw on the canvas below. The haptic feedback changes
+        based on the tool and drawing speed.</p>
+
+    <div style="margin-bottom: 20px;">
+        <button id="playBtn">Play / エンジン起動</button>
+    </div>
+
+    <div class="tools">
+        <button class="tool-btn active" data-tool="pencil">Pencil ✏️</button>
+        <button class="tool-btn" data-tool="marker">Marker 🖍️</button>
+        <button class="tool-btn" data-tool="brush">Brush 🖌️</button>
+        <button class="tool-btn" data-tool="spray">Spray 💨</button>
+    </div>
+
+    <div id="canvasContainer">
+        <canvas id="drawCanvas"></canvas>
+    </div>
+
+    <button id="clearBtn" style="background: #444;">Clear Canvas</button>
+
+    <script type="module">
+        import { HapticEngine } from '../src/ProceduralHaptics.js';
+
+        const haptics = new HapticEngine();
+
+        // --- エンジン制御 ---
+        const playBtn = document.getElementById('playBtn');
+        playBtn.addEventListener('click', async () => {
+            const isPlaying = await haptics.togglePlay();
+            playBtn.textContent = isPlaying ? 'Stop / 停止' : 'Play / エンジン起動';
+            if (isPlaying) playBtn.classList.add('playing');
+            else playBtn.classList.remove('playing');
+        });
+
+        // --- Tool Settings (Visual & Haptic) ---
+        const toolSettings = {
+            pencil: {
+                color: '#333', size: 2,
+                haptics: { granularity: 0.9, roughness: 0.8, state: 0.8, hardness: 0.9, weight: 0.8, viscosity: 0.0 }
+            },
+            marker: {
+                color: '#0055ff', size: 8,
+                haptics: { granularity: 0.1, roughness: 0.3, state: 0.0, hardness: 0.2, weight: 0.3, viscosity: 0.6 }
+            },
+            brush: {
+                color: '#ff3366', size: 15,
+                haptics: { granularity: 0.0, roughness: 0.1, state: 0.0, hardness: 0.0, weight: 0.1, viscosity: 0.8 }
+            },
+            spray: {
+                color: '#00cc66', size: 20,
+                haptics: { granularity: 1.0, roughness: 1.0, state: 0.0, hardness: 0.4, weight: 0.9, viscosity: 0.0 }
+            }
+        };
+
+        let currentTool = 'pencil';
+        haptics.setParams(toolSettings[currentTool].haptics);
+
+        // Tool Selection UI
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                currentTool = e.target.dataset.tool;
+                haptics.setParams(toolSettings[currentTool].haptics);
+            });
+        });
+
+        // --- Canvas Drawing Logic ---
+        const canvas = document.getElementById('drawCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvasContainer');
+
+        const resizeCanvas = () => {
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+        };
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        let isDrawing = false;
+        let lastX = 0, lastY = 0, lastTime = 0;
+
+        const getPos = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            if (e.touches && e.touches.length > 0) {
+                return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
+            }
+            return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        };
+
+        const draw = (e, pos) => {
+            if (currentTool === 'spray') {
+                // Simple spray visual effect
+                ctx.fillStyle = toolSettings[currentTool].color;
+                for (let i = 0; i < 10; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = Math.random() * toolSettings[currentTool].size;
+                    const sx = pos.x + Math.cos(angle) * radius;
+                    const sy = pos.y + Math.sin(angle) * radius;
+                    ctx.fillRect(sx, sy, 1, 1);
+                }
+            } else {
+                ctx.beginPath();
+                ctx.moveTo(lastX, lastY);
+                ctx.lineTo(pos.x, pos.y);
+                ctx.strokeStyle = toolSettings[currentTool].color;
+                ctx.lineWidth = toolSettings[currentTool].size;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.stroke();
+            }
+            lastX = pos.x; lastY = pos.y;
+        };
+
+        const startDraw = (e) => {
+            e.preventDefault();
+            const pos = getPos(e);
+            isDrawing = true;
+            lastX = pos.x; lastY = pos.y;
+            lastTime = performance.now();
+        };
+
+        const moveDraw = (e) => {
+            if (!isDrawing) return;
+            e.preventDefault();
+            const pos = getPos(e);
+            const now = performance.now();
+            const dt = now - lastTime;
+
+            // Calculate velocity for haptic engine
+            if (dt > 0) {
+                const dist = Math.hypot(pos.x - lastX, pos.y - lastY);
+                let rawVel = (dist / dt) * 1.5;
+                if (currentTool === 'spray') rawVel = 2.0; // Spray is constant vibration when moving
+                haptics.setVelocity(Math.min(rawVel, 5.0));
+            }
+
+            draw(e, pos);
+            lastTime = now;
+        };
+
+        const endDraw = () => {
+            isDrawing = false;
+            haptics.setVelocity(0); // Stop haptics when not drawing
+        };
+
+        canvas.addEventListener('mousedown', startDraw);
+        canvas.addEventListener('mousemove', moveDraw);
+        window.addEventListener('mouseup', endDraw);
+        window.addEventListener('mouseleave', endDraw);
+
+        canvas.addEventListener('touchstart', startDraw, { passive: false });
+        canvas.addEventListener('touchmove', moveDraw, { passive: false });
+        window.addEventListener('touchend', endDraw);
+
+        // Reset Haptics if stuck
+        setInterval(() => {
+            if (!isDrawing || performance.now() - lastTime > 100) haptics.setVelocity(0);
+        }, 50);
+
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        });
+
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <title>ProceduralHaptics - UI Elements Demo</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .ui-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            background: #1a1a1a;
+            padding: 30px;
+            border-radius: 12px;
+            border: 2px solid #444;
+        }
+
+        .haptic-btn {
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            color: white;
+            transition: transform 0.1s, background-color 0.2s;
+        }
+
+        .btn-soft {
+            background: #4caf50;
+        }
+
+        .btn-soft:hover {
+            background: #66bb6a;
+        }
+
+        .btn-hard {
+            background: #f44336;
+        }
+
+        .btn-hard:hover {
+            background: #ef5350;
+        }
+
+        .btn-buzzy {
+            background: #ff9800;
+        }
+
+        .btn-buzzy:hover {
+            background: #ffb74d;
+        }
+
+        .haptic-btn:active {
+            transform: scale(0.95);
+        }
+
+        .switch-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #222;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        /* Toggle Switch CSS */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            -webkit-transition: .4s;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            -webkit-transition: .4s;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider {
+            background-color: #2196F3;
+        }
+
+        input:focus+.slider {
+            box-shadow: 0 0 1px #2196F3;
+        }
+
+        input:checked+.slider:before {
+            -webkit-transform: translateX(26px);
+            -ms-transform: translateX(26px);
+            transform: translateX(26px);
+        }
+
+        .tick-slider-container {
+            background: #222;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .tick-slider-container label {
+            color: #fff;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+
+        .nav-link {
+            padding: 8px 16px;
+            background: #333;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        .nav-link:hover {
+            background: #555;
+        }
+
+        .nav-link.active {
+            background: #0070cc;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="nav-links">
+        <a href="index.html" class="nav-link">Main Demo</a>
+        <a href="buttons.html" class="nav-link active">UI Elements</a>
+        <a href="drawing.html" class="nav-link">Drawing</a>
+    </div>
+
+    <h1>UI Elements Haptics</h1>
+    <p style="text-align:center; color:#ccc; margin-bottom: 20px;">Interact with the components below to feel different
+        haptic responses.</p>
+
+    <div style="margin-bottom: 20px;">
+        <button id="playBtn">Play / エンジン起動</button>
+    </div>
+
+    <div class="ui-container">
+        <h3>Buttons (Clicks & Hovers)</h3>
+        <button class="haptic-btn btn-soft" id="btnSoft">Soft Click</button>
+        <button class="haptic-btn btn-hard" id="btnHard">Hard Click</button>
+        <button class="haptic-btn btn-buzzy" id="btnBuzzy">Buzzy Hover & Click</button>
+
+        <hr style="border-color: #444; width: 100%;">
+
+        <h3>Toggle Switch (Snaps)</h3>
+        <div class="switch-container">
+            <span style="color: white; font-weight: bold;">Power</span>
+            <label class="switch">
+                <input type="checkbox" id="powerSwitch">
+                <span class="slider"></span>
+            </label>
+        </div>
+
+        <hr style="border-color: #444; width: 100%;">
+
+        <h3>Range Slider (Ticks)</h3>
+        <div class="tick-slider-container">
+            <label>Volume</label>
+            <input type="range" id="tickSlider" min="0" max="100" value="50" style="width: 100%;">
+        </div>
+    </div>
+
+    <script type="module">
+        import { HapticEngine } from '../src/ProceduralHaptics.js';
+
+        const haptics = new HapticEngine();
+
+        // --- エンジン制御 ---
+        const playBtn = document.getElementById('playBtn');
+        playBtn.addEventListener('click', async () => {
+            const isPlaying = await haptics.togglePlay();
+            playBtn.textContent = isPlaying ? 'Stop / 停止' : 'Play / エンジン起動';
+            if (isPlaying) playBtn.classList.add('playing');
+            else playBtn.classList.remove('playing');
+        });
+
+        // --- Helper function for triggering single events ---
+        // UI clicks are usually quick impulses
+        const triggerHapticEvent = async (params, intensity = 1.0) => {
+            if (!haptics.isPlaying) return;
+            // temporarily set params for the impulse
+            const oldParams = { ...haptics.params };
+            haptics.setParams(params);
+            haptics.triggerCollision(intensity);
+
+            // Revert params after impulse decay (approx 50ms)
+            setTimeout(() => {
+                haptics.setParams(oldParams);
+            }, 100);
+        };
+
+        // --- Button Events ---
+        const btnSoft = document.getElementById('btnSoft');
+        btnSoft.addEventListener('mousedown', () => {
+            triggerHapticEvent({ granularity: 0.1, roughness: 0.0, state: 0.0, hardness: 0.1, weight: 0.8, viscosity: 0.2 }, 0.5);
+        });
+
+        const btnHard = document.getElementById('btnHard');
+        btnHard.addEventListener('mousedown', () => {
+            triggerHapticEvent({ granularity: 1.0, roughness: 0.1, state: 1.0, hardness: 1.0, weight: 0.2, viscosity: 0.0 }, 1.0);
+        });
+
+        const btnBuzzy = document.getElementById('btnBuzzy');
+        let hoverInterval;
+        btnBuzzy.addEventListener('mouseenter', () => {
+            if (!haptics.isPlaying) return;
+            haptics.setParams({ granularity: 0.5, roughness: 0.8, state: 0.0, hardness: 0.4, weight: 0.9, viscosity: 0.0 });
+            haptics.setVelocity(2.0); // Continuous buzz on hover
+        });
+        btnBuzzy.addEventListener('mouseleave', () => {
+            haptics.setVelocity(0);
+        });
+        btnBuzzy.addEventListener('mousedown', () => {
+            triggerHapticEvent({ granularity: 0.8, roughness: 0.9, state: 0.5, hardness: 0.8, weight: 0.5, viscosity: 0.0 }, 0.9);
+        });
+
+        // --- Switch Events ---
+        const powerSwitch = document.getElementById('powerSwitch');
+        powerSwitch.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                // 'On' snap - slightly higher pitch, sharp
+                triggerHapticEvent({ granularity: 0.8, roughness: 0.2, state: 1.0, hardness: 0.9, weight: 0.7, viscosity: 0.0 }, 0.8);
+            } else {
+                // 'Off' snap - lower pitch, heavy
+                triggerHapticEvent({ granularity: 0.6, roughness: 0.4, state: 1.0, hardness: 0.8, weight: 0.3, viscosity: 0.0 }, 0.7);
+            }
+        });
+
+        // --- Slider Events ---
+        const tickSlider = document.getElementById('tickSlider');
+        let lastValue = parseInt(tickSlider.value);
+        tickSlider.addEventListener('input', (e) => {
+            const currentValue = parseInt(e.target.value);
+            // Trigger a small tick every time the value changes by 1
+            if (Math.abs(currentValue - lastValue) >= 1) {
+                // As value increases, weight (pitch) increases slightly
+                const pitch = 0.2 + (currentValue / 100) * 0.6;
+                triggerHapticEvent({ granularity: 0.9, roughness: 0.1, state: 1.0, hardness: 0.7, weight: pitch, viscosity: 0.0 }, 0.3);
+                lastValue = currentValue;
+            }
+        });
+
+    </script>
+</body>
+
+</html>
