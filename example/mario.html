@@ -130,6 +130,10 @@
     <p style="text-align:center; color:#ccc; margin-bottom: 20px;">Use Left/Right arrows and SPACE to jump, or use the
         on-screen buttons. Feel the footsteps and impacts.</p>
 
+    <!-- Waveform Visualizer -->
+    <canvas id="hapticCanvas"
+        style="width: 100%; height: 100px; background: #000; border: 2px solid #333; border-radius: 8px; margin-bottom: 20px; box-sizing: border-box;"></canvas>
+
     <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center; justify-content: center;">
         <button id="playBtn" style="flex: 1;">Play / エンジン起動</button>
         <select id="audioDeviceSelect"
@@ -155,10 +159,11 @@
     </div>
 
     <script type="module">
-        import { HapticEngine, GamepadManager } from '../src/ProceduralHaptics.js';
+        import { HapticEngine, GamepadManager, HapticVisualizer } from '../src/ProceduralHaptics.js';
 
         const haptics = new HapticEngine();
         const gamepad = new GamepadManager();
+        const visualizer = new HapticVisualizer(haptics, document.getElementById('hapticCanvas'));
 
         // --- Audio Device Selection (HD Haptics Routing) ---
         const audioSelect = document.getElementById('audioDeviceSelect');
@@ -209,8 +214,10 @@
                 playBtn.classList.add('playing');
                 // Try to populate devices on first user interaction
                 if (audioSelect.options.length <= 1) populateAudioDevices();
+                visualizer.start();
             } else {
                 playBtn.classList.remove('playing');
+                visualizer.stop();
             }
         });
 

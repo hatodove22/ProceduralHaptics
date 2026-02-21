@@ -34,11 +34,15 @@ export class HapticEngine {
         this.masterGain = this.audioCtx.createGain();
         this.masterGain.gain.value = 0;
 
+        this.analyser = this.audioCtx.createAnalyser();
+        this.analyser.fftSize = 2048;
+
         this.scriptNode = this.audioCtx.createScriptProcessor(4096, 1, 1);
         this.scriptNode.onaudioprocess = (e) => this._processAudio(e);
 
         this.scriptNode.connect(this.masterGain);
-        this.masterGain.connect(this.audioCtx.destination);
+        this.masterGain.connect(this.analyser);
+        this.analyser.connect(this.audioCtx.destination);
     }
 
     async togglePlay() {
@@ -241,5 +245,81 @@ export class GamepadManager {
             }
         }
         return { connected: false };
+    }
+}
+
+// --- New: Waveform Visualizer ---
+export class HapticVisualizer {
+    constructor(engine, canvas) {
+        this.engine = engine;
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.isDrawing = false;
+
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+    }
+
+    resize() {
+        this.canvas.width = this.canvas.clientWidth || 600;
+        this.canvas.height = this.canvas.clientHeight || 100;
+    }
+
+    start() {
+        if (this.isDrawing) return;
+        this.isDrawing = true;
+        this.draw();
+    }
+
+    stop() {
+        this.isDrawing = false;
+    }
+
+    draw() {
+        if (!this.isDrawing) return;
+        requestAnimationFrame(() => this.draw());
+
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        this.ctx.fillStyle = '#121212';
+        this.ctx.fillRect(0, 0, width, height);
+
+        if (!this.engine.analyser) {
+            // Draw silence flatline if audio context isn't running yet
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, height / 2);
+            this.ctx.lineTo(width, height / 2);
+            this.ctx.strokeStyle = '#0070cc';
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
+            return;
+        }
+
+        const bufferLength = this.engine.analyser.frequencyBinCount;
+        const dataArray = new Float32Array(bufferLength);
+        this.engine.analyser.getFloatTimeDomainData(dataArray);
+
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeStyle = '#00ffff';
+        this.ctx.shadowBlur = 10;
+        this.ctx.shadowColor = '#00ffff';
+        this.ctx.beginPath();
+
+        const sliceWidth = width * 1.0 / bufferLength;
+        let x = 0;
+
+        for (let i = 0; i < bufferLength; i++) {
+            const v = dataArray[i];
+            const y = height / 2 - (v * height / 2); // mapped to center
+
+            if (i === 0) {
+                this.ctx.moveTo(x, y);
+            } else {
+                this.ctx.lineTo(x, y);
+            }
+            x += sliceWidth;
+        }
+        this.ctx.stroke();
+        this.ctx.shadowBlur = 0; // reset
     }
 }
